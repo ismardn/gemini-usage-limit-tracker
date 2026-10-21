@@ -227,7 +227,7 @@
       const hasCurrent = currentMetrics && typeof currentMetrics.percentage === 'number' && !isNaN(currentMetrics.percentage);
       const initialPercentage = hasCurrent ? Math.round(currentMetrics.percentage) : null;
       const pctDisplay = initialPercentage !== null ? `${initialPercentage}%` : '--%';
-      const labelDisplay = initialPercentage !== null ? `${initialPercentage}%` : '--';
+      const labelDisplay = initialPercentage !== null ? `${initialPercentage}` : '--';
       const statusClass = initialPercentage !== null ? getQuotaStatusClass(initialPercentage) : 'status-green';
       const countdownString = formatRemainingTime(currentMetrics);
       const clockString = currentMetrics?.resetTime ? ` (${currentMetrics.resetTime})` : '';
@@ -270,6 +270,20 @@
           const cd = formatRemainingTime(latestUsageData.current);
           const clk = latestUsageData.current.resetTime ? ` (${latestUsageData.current.resetTime})` : '';
           innerCountdown.textContent = `Reset: ${cd}${clk}`;
+        }
+
+        // Also ensure label and progress bar color match immediately
+        if (latestUsageData?.current && typeof latestUsageData.current.percentage === 'number') {
+          const pct = Math.round(latestUsageData.current.percentage);
+          const statusCls = getQuotaStatusClass(pct);
+          const innerLabel = collapsedCircleWidget.querySelector('#gem-circle-label');
+          if (innerLabel) {
+            innerLabel.textContent = `${pct}`;
+          }
+          const innerBar = collapsedCircleWidget.querySelector('#gem-circle-bar');
+          if (innerBar) {
+            innerBar.setAttribute('class', `gem-usage-svg-bar-circle ${statusCls}`);
+          }
         }
 
         // 2. Refresh from local storage to catch any background/popup updates
@@ -330,7 +344,7 @@
     }
 
     // Circular gauge elements (update ALL instances in case of multiple containers)
-    const targetCircleLabel = hasCurrent ? `${currentPercentage}%` : '--';
+    const targetCircleLabel = hasCurrent ? `${currentPercentage}` : '--';
     const circleLabelElements = document.querySelectorAll('#gem-circle-label, .gem-usage-circle-label');
     circleLabelElements.forEach((el) => {
       if (el.textContent !== targetCircleLabel) {
@@ -340,11 +354,14 @@
 
     const circumferenceConstant = 69.11;
     const strokeOffset = String(circumferenceConstant - (currentPercentage / 100) * circumferenceConstant);
+    const targetBarClass = `gem-usage-svg-bar-circle ${currentStatusClass}`;
     const circleBarElements = document.querySelectorAll('#gem-circle-bar, .gem-usage-svg-bar-circle');
     circleBarElements.forEach((el) => {
       if (el.style.strokeDashoffset !== strokeOffset) {
         el.style.strokeDashoffset = strokeOffset;
-        el.className = `gem-usage-svg-bar-circle ${currentStatusClass}`;
+      }
+      if (el.getAttribute('class') !== targetBarClass) {
+        el.setAttribute('class', targetBarClass);
       }
     });
 

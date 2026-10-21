@@ -175,10 +175,17 @@ body.dark-theme, html[data-root-style="dark"] {
 
 .gem-usage-circle-label {
   position: absolute;
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--gem-tracker-text-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
 }
 
 .gem-usage-circle-tooltip {
