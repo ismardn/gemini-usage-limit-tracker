@@ -46,10 +46,7 @@ Clicking the bar or the circular gauge opens a modal with:
 1. Open your browser's extensions page (e.g., `chrome://extensions`, `brave://extensions`, or `edge://extensions`).
 2. Enable **Developer mode**.
 3. Click **"Load unpacked"**.
-4. Select this directory:
-   ```
-   C:\Users\Ismael\chromium_extensions\gemini-usage-limit
-   ```
+4. Select this directory (the root folder containing `manifest.json`).
 5. Visit [gemini.google.com](https://gemini.google.com) or reload your tab.
 
 ---

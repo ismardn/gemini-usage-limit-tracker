@@ -1,32 +1,20 @@
 const DEFAULT_REFRESH_INTERVAL_MINUTES = 5;
-const EXTRACTION_COOLDOWN_MS = 60000; // 60 seconds minimum between automatic background extractions
+const EXTRACTION_COOLDOWN_MS = 60000;
 
 let isExtractionActive = false;
 let lastExtractionTimestamp = 0;
 
-/**
- * Calculates a jittered delay (in milliseconds) around the chosen interval.
- * Adds a pseudo-random modulo/offset of seconds (e.g. +/- 20s to 45s)
- * so refresh timestamps do not appear robotic or predictable.
- */
 function calculateJitteredDelayMs(baseMinutes) {
   const safeMinutes = Math.max(1, parseInt(baseMinutes, 10) || DEFAULT_REFRESH_INTERVAL_MINUTES);
   const baseMs = safeMinutes * 60 * 1000;
 
-  // Determine a natural jitter window: between 20s and 45s depending on base interval
   const maxJitterSec = Math.min(45, Math.max(20, Math.round(safeMinutes * 3)));
-  // Random integer in [-maxJitterSec, +maxJitterSec]
   const jitterSec = Math.floor(Math.random() * (maxJitterSec * 2 + 1)) - maxJitterSec;
   const jitterMs = jitterSec * 1000;
 
-  // Ensure delay is at least 60 seconds (Chrome MV3 minimum alarm threshold)
   return Math.max(60 * 1000, baseMs + jitterMs);
 }
 
-/**
- * Schedules a one-shot alarm with random jitter.
- * When it triggers, the next alarm will be rescheduled with a fresh jitter.
- */
 function scheduleNextAlarm(intervalMinutes) {
   const minutes = intervalMinutes || DEFAULT_REFRESH_INTERVAL_MINUTES;
   chrome.alarms.clear('check_gemini_usage', () => {
@@ -37,11 +25,6 @@ function scheduleNextAlarm(intervalMinutes) {
   });
 }
 
-/**
- * Dispatches an extraction trigger to ONLY ONE single Gemini tab.
- * Prefers the currently active tab in the focused window, or any active tab, or the first one.
- * Never requests all tabs to open iframes concurrently.
- */
 function triggerSingleTabRefresh() {
   chrome.tabs.query({ url: 'https://gemini.google.com/*' }, (tabs) => {
     if (!tabs || tabs.length === 0) return;
@@ -59,7 +42,6 @@ function triggerSingleTabRefresh() {
         isExtractionActive = false;
       });
 
-      // Safety fallback: release lock after 20 seconds
       setTimeout(() => {
         isExtractionActive = false;
       }, 20000);
@@ -67,10 +49,6 @@ function triggerSingleTabRefresh() {
   });
 }
 
-/**
- * Broadcasts newly extracted usage data to ALL open Gemini tabs
- * so every tab is updated in real time without having to extract on its own.
- */
 function broadcastUsageDataToAllTabs(usageData, accountIndex) {
   chrome.tabs.query({ url: 'https://gemini.google.com/*' }, (tabs) => {
     if (tabs && tabs.length > 0) {
@@ -122,10 +100,8 @@ chrome.runtime.onStartup.addListener(() => {
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'check_gemini_usage') {
-    // Only trigger extraction in a single designated tab
     triggerSingleTabRefresh();
 
-    // Schedule the next alarm with a fresh randomized jitter
     chrome.storage.local.get(['refreshInterval'], (result) => {
       const minutes = result.refreshInterval || DEFAULT_REFRESH_INTERVAL_MINUTES;
       scheduleNextAlarm(minutes);
@@ -134,7 +110,6 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Coordinated check when a tab loads or asks to extract
   if (message.action === 'CHECK_IF_EXTRACTION_NEEDED') {
     const now = Date.now();
     const timeSinceLast = now - lastExtractionTimestamp;
@@ -178,7 +153,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         updateActionBadge(usageData.current.percentage);
       }
 
-      // Immediately sync with all other open Gemini tabs
       broadcastUsageDataToAllTabs(usageData, accountIndex);
 
       sendResponse({ status: 'success' });
@@ -196,11 +170,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === 'FORCE_REFRESH') {
-    // Single tab refresh to prevent concurrent iframes
     triggerSingleTabRefresh();
     sendResponse({ status: 'refresh_triggered' });
 
-    // Reset the periodic schedule so manual refresh starts a fresh jittered cycle
     chrome.storage.local.get(['refreshInterval'], (result) => {
       const minutes = result.refreshInterval || DEFAULT_REFRESH_INTERVAL_MINUTES;
       scheduleNextAlarm(minutes);

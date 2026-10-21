@@ -163,7 +163,6 @@
         latestUsageData = messageEvent.data.payload;
         renderUsageInterface();
 
-        // Forward to background to save and broadcast to all other open tabs immediately
         chrome.runtime.sendMessage({
           action: 'USAGE_DATA_SAVED',
           data: latestUsageData
@@ -186,7 +185,6 @@
       document.querySelector('.sidenav-with-history-container');
     const menuButtonContainer = document.querySelector('.side-nav-menu-button');
 
-    // If Gemini's interface structure is not ready yet, postpone mounting
     if (!sidebarContainer && !menuButtonContainer) {
       return false;
     }
@@ -254,9 +252,7 @@
         openUsageDetailsModal();
       });
 
-      // Update hover tooltip immediately when hovered
       collapsedCircleWidget.addEventListener('mouseenter', () => {
-        // 1. Immediately update any tooltip elements inside this widget
         const targetPct = (latestUsageData?.current && typeof latestUsageData.current.percentage === 'number')
           ? `5h Usage: ${Math.round(latestUsageData.current.percentage)}%`
           : '5h Usage: --%';
@@ -272,7 +268,6 @@
           innerCountdown.textContent = `Reset: ${cd}${clk}`;
         }
 
-        // Also ensure label and progress bar color match immediately
         if (latestUsageData?.current && typeof latestUsageData.current.percentage === 'number') {
           const pct = Math.round(latestUsageData.current.percentage);
           const statusCls = getQuotaStatusClass(pct);
@@ -286,7 +281,6 @@
           }
         }
 
-        // 2. Refresh from local storage to catch any background/popup updates
         loadPersistedUsageData();
       });
     }
@@ -343,7 +337,6 @@
       clockTextElement.textContent = clockFormattedString;
     }
 
-    // Circular gauge elements (update ALL instances in case of multiple containers)
     const targetCircleLabel = hasCurrent ? `${currentPercentage}` : '--';
     const circleLabelElements = document.querySelectorAll('#gem-circle-label, .gem-usage-circle-label');
     circleLabelElements.forEach((el) => {
@@ -365,7 +358,6 @@
       }
     });
 
-    // Tooltip elements (update ALL instances in DOM)
     const targetTooltipPct = `5h Usage: ${currentPctString}`;
     const tooltipPctElements = document.querySelectorAll('#gem-tooltip-pct');
     tooltipPctElements.forEach((el) => {
@@ -580,7 +572,6 @@
 
   function queuePostPromptUsageRefresh() {
     if (postPromptRefreshTimer) clearTimeout(postPromptRefreshTimer);
-    // Add jitter around 10 seconds: 8s to 13s to prevent robotic periodicity
     const postPromptDelayMs = 8000 + Math.floor(Math.random() * 5000);
     postPromptRefreshTimer = setTimeout(() => {
       executeUsageExtraction(false);
@@ -599,7 +590,6 @@
     };
 
     const domStructureObserver = new MutationObserver((mutations) => {
-      // Ignore mutations originating from tracker elements
       let isRelevant = false;
       for (const mutation of mutations) {
         const target = mutation.target;
@@ -672,7 +662,6 @@
     });
   }
 
-  // Listen to storage updates from background or sibling tabs
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local') {
       const hasUsageChange = Object.keys(changes).some(
@@ -709,11 +698,9 @@
       if (latestUsageData) {
         renderUsageInterface();
       }
-      // Periodically sync from storage to keep everything aligned
       loadPersistedUsageData();
     }, 10000);
 
-    // Coordinate with background so only ONE tab runs extraction on load
     setTimeout(() => {
       chrome.runtime.sendMessage({ action: 'CHECK_IF_EXTRACTION_NEEDED' }, (response) => {
         if (chrome.runtime.lastError) return;
