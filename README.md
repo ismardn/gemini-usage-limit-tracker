@@ -1,4 +1,4 @@
-# Gemini Usage Limit Tracker
+# Gemini Usage Limit Tracker - WebExtension
 
 A lightweight WebExtension (Manifest V3) that tracks and displays your real-time Google Gemini usage quota and reset countdown directly in the sidebar navigation.
 
