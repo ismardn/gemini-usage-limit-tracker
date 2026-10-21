@@ -1,0 +1,60 @@
+{
+  "manifest_version": 3,
+  "name": "Gemini Usage Limit Tracker. Created by isma, assisted by AI",
+  "version": "1.0.0",
+  "description": "Real-time Gemini usage quota and reset countdown integrated seamlessly into the sidebar and interface.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "storage",
+    "alarms",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "https://gemini.google.com/*"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "gemini_ruleset",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "Gemini Quota"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_end",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://gemini.google.com/*/usage*",
+        "https://gemini.google.com/usage*"
+      ],
+      "js": ["extractor.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}
