@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Gemini Usage Limit Tracker",
+  "name": "Gemini Usage Limit Tracker - WebExtension",
   "version": "1.0.0",
   "description": "Real-time Gemini usage quota and reset countdown integrated seamlessly into the sidebar and interface. Created by isma, assisted by AI",
   "icons": {
