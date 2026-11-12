@@ -5,6 +5,49 @@
   let extractionAttemptCount = 0;
   const MAX_EXTRACTION_ATTEMPTS = 40;
 
+  function formatToEnglishDateString(rawString) {
+    if (!rawString) return '';
+    let str = String(rawString).trim();
+    str = str.replace(/\b(?:le|on)\s+/gi, '');
+    const months = [
+      [/janv(?:\.|\b)|janvier/gi, 'Jan'],
+      [/f[ée]vr(?:\.|\b)|f[ée]vrier/gi, 'Feb'],
+      [/mars/gi, 'Mar'],
+      [/avr(?:\.|\b)|avril/gi, 'Apr'],
+      [/mai/gi, 'May'],
+      [/juin/gi, 'Jun'],
+      [/juil(?:\.|\b)|juillet/gi, 'Jul'],
+      [/ao[uû]t/gi, 'Aug'],
+      [/sept(?:\.|\b)|septembre/gi, 'Sep'],
+      [/oct(?:\.|\b)|octobre/gi, 'Oct'],
+      [/nov(?:\.|\b)|novembre/gi, 'Nov'],
+      [/d[ée]c(?:\.|\b)|d[ée]cembre/gi, 'Dec']
+    ];
+    for (const [pattern, enMonth] of months) {
+      str = str.replace(pattern, enMonth);
+    }
+    const days = [
+      [/lundi/gi, 'Monday'],
+      [/mardi/gi, 'Tuesday'],
+      [/mercredi/gi, 'Wednesday'],
+      [/jeudi/gi, 'Thursday'],
+      [/vendredi/gi, 'Friday'],
+      [/samedi/gi, 'Saturday'],
+      [/dimanche/gi, 'Sunday']
+    ];
+    for (const [pattern, enDay] of days) {
+      str = str.replace(pattern, enDay);
+    }
+    str = str.replace(/\s+[àa]\s+/gi, ' at ');
+    str = str.replace(/^[àa]\s+/gi, '');
+    str = str.replace(/(\d{1,2})h(\d{2})/gi, '$1:$2');
+    const dateFirstMatch = str.match(/^(\d{1,2})\s+([A-Za-z]+)\s+at\s+(\d{1,2}:\d{2}.*)$/i);
+    if (dateFirstMatch) {
+      str = `${dateFirstMatch[2]} ${dateFirstMatch[1]} at ${dateFirstMatch[3]}`;
+    }
+    return str.trim();
+  }
+
   function parseUsageMetricsFromDOM() {
     const currentUsageElement = document.querySelector('[data-testid="current-usage"]');
     const weeklyUsageElement = document.querySelector('[data-testid="weekly-usage"]');
@@ -83,7 +126,7 @@
 
       const resetTimeMatch = textContent.match(/(?:R[ée]initialisation\s+[àa]|Resets?\s+at)\s*([0-9]{1,2}(?:[:.][0-9]{2})?(?:\s*[AaPp][Mm])?)/i);
       if (resetTimeMatch) {
-        parsedResetTimeString = resetTimeMatch[1].trim();
+        parsedResetTimeString = formatToEnglishDateString(resetTimeMatch[1].trim());
       }
 
       if (reactExtracted?.refreshesAt) {
@@ -115,7 +158,7 @@
       let parsedWeeklyResetString = null;
       const weeklyResetMatch = textContent.match(/(?:R[ée]initialisation\s+(?:le\s+)?|Resets?\s+(?:on\s+)?)([^\n\r]+)/i);
       if (weeklyResetMatch) {
-        parsedWeeklyResetString = weeklyResetMatch[1].trim();
+        parsedWeeklyResetString = formatToEnglishDateString(weeklyResetMatch[1].trim());
       }
 
       extractionResult.weekly = {

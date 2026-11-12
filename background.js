@@ -1,4 +1,5 @@
-const DEFAULT_REFRESH_INTERVAL_MINUTES = 5;
+const DEFAULT_REFRESH_INTERVAL_MINUTES = 0;
+const DEFAULT_PROMPT_REFRESH_THRESHOLD = 3;
 const EXTRACTION_COOLDOWN_MS = 60000;
 
 let isExtractionActive = false;
@@ -16,8 +17,11 @@ function calculateJitteredDelayMs(baseMinutes) {
 }
 
 function scheduleNextAlarm(intervalMinutes) {
-  const minutes = intervalMinutes || DEFAULT_REFRESH_INTERVAL_MINUTES;
+  const minutes = intervalMinutes !== undefined ? parseInt(intervalMinutes, 10) : DEFAULT_REFRESH_INTERVAL_MINUTES;
   chrome.alarms.clear('check_gemini_usage', () => {
+    if (minutes <= 0) {
+      return;
+    }
     const delayMs = calculateJitteredDelayMs(minutes);
     chrome.alarms.create('check_gemini_usage', {
       when: Date.now() + delayMs
@@ -64,37 +68,42 @@ function broadcastUsageDataToAllTabs(usageData, accountIndex) {
 }
 
 function updateActionBadge(percentage) {
-  if (percentage === null || percentage === undefined || isNaN(percentage)) {
-    chrome.action.setBadgeText({ text: '' });
-    return;
-  }
-
-  const roundedPercentage = Math.round(percentage);
-  chrome.action.setBadgeText({ text: `${roundedPercentage}%` });
-
-  let badgeColor = '#10b981';
-  if (roundedPercentage >= 85) {
-    badgeColor = '#ef4444';
-  } else if (roundedPercentage >= 60) {
-    badgeColor = '#f59e0b';
-  }
-
-  chrome.action.setBadgeBackgroundColor({ color: badgeColor });
+  chrome.action.setBadgeText({ text: '' });
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.get(['refreshInterval'], (result) => {
-    const minutes = result.refreshInterval || DEFAULT_REFRESH_INTERVAL_MINUTES;
-    if (!result.refreshInterval) {
-      chrome.storage.local.set({ refreshInterval: DEFAULT_REFRESH_INTERVAL_MINUTES });
+  chrome.action.setBadgeText({ text: '' });
+  chrome.storage.local.get(['refreshInterval', 'promptRefreshThreshold', 'promptCounter'], (result) => {
+    const minutes = result.refreshInterval !== undefined ? result.refreshInterval : DEFAULT_REFRESH_INTERVAL_MINUTES;
+    const threshold = result.promptRefreshThreshold !== undefined ? result.promptRefreshThreshold : DEFAULT_PROMPT_REFRESH_THRESHOLD;
+    const updates = {};
+    if (result.refreshInterval === undefined) {
+      updates.refreshInterval = DEFAULT_REFRESH_INTERVAL_MINUTES;
+    }
+    if (result.promptRefreshThreshold === undefined) {
+      updates.promptRefreshThreshold = threshold;
+    }
+    if (result.promptCounter === undefined) {
+      updates.promptCounter = 0;
+    }
+    if (Object.keys(updates).length > 0) {
+      chrome.storage.local.set(updates);
     }
     scheduleNextAlarm(minutes);
   });
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  chrome.storage.local.get(['refreshInterval'], (result) => {
-    scheduleNextAlarm(result.refreshInterval || DEFAULT_REFRESH_INTERVAL_MINUTES);
+  chrome.action.setBadgeText({ text: '' });
+  chrome.storage.local.get(['refreshInterval', 'last_updated'], (result) => {
+    const minutes = result.refreshInterval !== undefined ? result.refreshInterval : DEFAULT_REFRESH_INTERVAL_MINUTES;
+    scheduleNextAlarm(minutes);
+
+    const now = Date.now();
+    const lastUpdated = result.last_updated || 0;
+    if (!lastUpdated || (now - lastUpdated > 5 * 3600 * 1000)) {
+      setTimeout(triggerSingleTabRefresh, 2500);
+    }
   });
 });
 
@@ -103,7 +112,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     triggerSingleTabRefresh();
 
     chrome.storage.local.get(['refreshInterval'], (result) => {
-      const minutes = result.refreshInterval || DEFAULT_REFRESH_INTERVAL_MINUTES;
+      const minutes = result.refreshInterval !== undefined ? result.refreshInterval : DEFAULT_REFRESH_INTERVAL_MINUTES;
       scheduleNextAlarm(minutes);
     });
   }
@@ -149,22 +158,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     };
 
     chrome.storage.local.set(storagePayload, () => {
-      if (usageData.current && typeof usageData.current.percentage === 'number') {
-        updateActionBadge(usageData.current.percentage);
-      }
-
+      updateActionBadge(null);
       broadcastUsageDataToAllTabs(usageData, accountIndex);
-
       sendResponse({ status: 'success' });
     });
     return true;
   }
 
   if (message.action === 'SET_REFRESH_INTERVAL') {
-    const parsedMinutes = parseInt(message.minutes, 10) || DEFAULT_REFRESH_INTERVAL_MINUTES;
+    const rawVal = parseInt(message.minutes, 10);
+    const parsedMinutes = isNaN(rawVal) ? DEFAULT_REFRESH_INTERVAL_MINUTES : rawVal;
     chrome.storage.local.set({ refreshInterval: parsedMinutes }, () => {
       scheduleNextAlarm(parsedMinutes);
       sendResponse({ status: 'success', minutes: parsedMinutes });
+    });
+    return true;
+  }
+
+  if (message.action === 'SET_PROMPT_THRESHOLD') {
+    const parsedThreshold = parseInt(message.threshold, 10);
+    const safeThreshold = isNaN(parsedThreshold) ? DEFAULT_PROMPT_REFRESH_THRESHOLD : parsedThreshold;
+    chrome.storage.local.set({ promptRefreshThreshold: safeThreshold }, () => {
+      sendResponse({ status: 'success', threshold: safeThreshold });
     });
     return true;
   }
@@ -174,7 +189,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ status: 'refresh_triggered' });
 
     chrome.storage.local.get(['refreshInterval'], (result) => {
-      const minutes = result.refreshInterval || DEFAULT_REFRESH_INTERVAL_MINUTES;
+      const minutes = result.refreshInterval !== undefined ? result.refreshInterval : DEFAULT_REFRESH_INTERVAL_MINUTES;
       scheduleNextAlarm(minutes);
     });
     return true;

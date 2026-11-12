@@ -5,7 +5,8 @@
   let latestUsageData = null;
   let isExtractionInProgress = false;
   let countdownIntervalIdentifier = null;
-  let postPromptRefreshTimer = null;
+  let isPromptGenerating = false;
+  let lastPromptCompletionTimestamp = 0;
 
   function getActiveAccountIndex() {
     const pathnameMatch = window.location.pathname.match(/\/u\/(\d+)/);
@@ -68,6 +69,48 @@
     }
   }
 
+  function formatToEnglishDateString(rawString) {
+    if (!rawString) return '';
+    let str = String(rawString).trim();
+    str = str.replace(/\b(?:le|on)\s+/gi, '');
+    const months = [
+      [/janv(?:\.|\b)|janvier/gi, 'Jan'],
+      [/f[ée]vr(?:\.|\b)|f[ée]vrier/gi, 'Feb'],
+      [/mars/gi, 'Mar'],
+      [/avr(?:\.|\b)|avril/gi, 'Apr'],
+      [/mai/gi, 'May'],
+      [/juin/gi, 'Jun'],
+      [/juil(?:\.|\b)|juillet/gi, 'Jul'],
+      [/ao[uû]t/gi, 'Aug'],
+      [/sept(?:\.|\b)|septembre/gi, 'Sep'],
+      [/oct(?:\.|\b)|octobre/gi, 'Oct'],
+      [/nov(?:\.|\b)|novembre/gi, 'Nov'],
+      [/d[ée]c(?:\.|\b)|d[ée]cembre/gi, 'Dec']
+    ];
+    for (const [pattern, enMonth] of months) {
+      str = str.replace(pattern, enMonth);
+    }
+    const days = [
+      [/lundi/gi, 'Monday'],
+      [/mercredi/gi, 'Wednesday'],
+      [/jeudi/gi, 'Thursday'],
+      [/vendredi/gi, 'Friday'],
+      [/samedi/gi, 'Saturday'],
+      [/dimanche/gi, 'Sunday']
+    ];
+    for (const [pattern, enDay] of days) {
+      str = str.replace(pattern, enDay);
+    }
+    str = str.replace(/\s+[àa]\s+/gi, ' at ');
+    str = str.replace(/^[àa]\s+/gi, '');
+    str = str.replace(/(\d{1,2})h(\d{2})/gi, '$1:$2');
+    const dateFirstMatch = str.match(/^(\d{1,2})\s+([A-Za-z]+)\s+at\s+(\d{1,2}:\d{2}.*)$/i);
+    if (dateFirstMatch) {
+      str = `${dateFirstMatch[2]} ${dateFirstMatch[1]} at ${dateFirstMatch[3]}`;
+    }
+    return str.trim();
+  }
+
   function formatRemainingTime(currentUsageMetrics) {
     if (!currentUsageMetrics) return '--';
 
@@ -83,7 +126,7 @@
     }
 
     if (currentUsageMetrics.resetTime) {
-      const timeString = currentUsageMetrics.resetTime;
+      const timeString = formatToEnglishDateString(currentUsageMetrics.resetTime);
       const match24Hour = timeString.match(/^(\d{1,2})[:.](\d{2})$/);
       const match12Hour = timeString.match(/^(\d{1,2})[:.]?(\d{2})?\s*([AaPp][Mm])$/i);
 
@@ -111,10 +154,22 @@
           targetMinute,
           0
         );
-        if (targetDate.getTime() <= currentDate.getTime()) {
-          targetDate.setDate(targetDate.getDate() + 1);
+
+        let differenceMs = targetDate.getTime() - currentDate.getTime();
+
+        if (differenceMs <= 0) {
+          const nextDayDiffMs = (targetDate.getTime() + 24 * 3600 * 1000) - currentDate.getTime();
+          if (nextDayDiffMs > 0 && nextDayDiffMs <= 5.5 * 3600 * 1000) {
+            differenceMs = nextDayDiffMs;
+          } else {
+            return 'Ready to reset';
+          }
         }
-        const differenceMs = targetDate.getTime() - currentDate.getTime();
+
+        if (differenceMs > 5.5 * 3600 * 1000) {
+          return 'Ready to reset';
+        }
+
         const totalMinutesRemaining = Math.floor(differenceMs / 60000);
         const hoursRemaining = Math.floor(totalMinutesRemaining / 60);
         const minutesRemaining = totalMinutesRemaining % 60;
@@ -127,6 +182,32 @@
     }
 
     return '--';
+  }
+
+  function setSidebarRefreshSpinning(isSpinning) {
+    const refreshBtn = document.getElementById('gem-sidebar-refresh-btn');
+    if (!refreshBtn) return;
+    if (isSpinning) {
+      refreshBtn.classList.add('spinning');
+      setTimeout(() => {
+        refreshBtn.classList.remove('spinning');
+      }, 10000);
+    } else {
+      refreshBtn.classList.remove('spinning');
+    }
+  }
+
+  function setModalRefreshSpinning(isSpinning) {
+    const refreshBtn = document.getElementById('gem-modal-refresh-btn');
+    if (!refreshBtn) return;
+    if (isSpinning) {
+      refreshBtn.classList.add('spinning');
+      setTimeout(() => {
+        refreshBtn.classList.remove('spinning');
+      }, 10000);
+    } else {
+      refreshBtn.classList.remove('spinning');
+    }
   }
 
   function executeUsageExtraction(forceImmediate = false) {
@@ -149,6 +230,8 @@
     const safetyTimeoutIdentifier = setTimeout(() => {
       if (isExtractionInProgress) {
         isExtractionInProgress = false;
+        setSidebarRefreshSpinning(false);
+        setModalRefreshSpinning(false);
         const staleFrame = document.getElementById('gem-usage-silent-frame');
         if (staleFrame) staleFrame.remove();
       }
@@ -159,6 +242,8 @@
         clearTimeout(safetyTimeoutIdentifier);
         window.removeEventListener('message', handleExtractionMessage);
         isExtractionInProgress = false;
+        setSidebarRefreshSpinning(false);
+        setModalRefreshSpinning(false);
 
         latestUsageData = messageEvent.data.payload;
         renderUsageInterface();
@@ -196,10 +281,15 @@
       sidebarBarWidget.title = 'Click for Gemini quota details';
       sidebarBarWidget.innerHTML = `
         <div class="gem-usage-bar-row">
+          <span class="gem-usage-pct-text status-green" id="gem-sidebar-pct-text">--%</span>
           <div class="gem-usage-progress-track">
             <div class="gem-usage-progress-fill status-green" id="gem-sidebar-progress-fill" style="width: 0%;"></div>
           </div>
-          <span class="gem-usage-pct-text status-green" id="gem-sidebar-pct-text">--%</span>
+          <button class="gem-usage-sidebar-refresh-btn" id="gem-sidebar-refresh-btn" type="button" title="Refresh quotas">
+            <svg viewBox="0 0 24 24" class="gem-usage-refresh-icon">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-1.19"/>
+            </svg>
+          </button>
         </div>
         <div class="gem-usage-info-row">
           <span class="gem-usage-time-text" id="gem-sidebar-time-text">⏱ Loading...</span>
@@ -207,7 +297,18 @@
         </div>
       `;
 
-      sidebarBarWidget.addEventListener('click', () => {
+      const sidebarRefreshBtn = sidebarBarWidget.querySelector('#gem-sidebar-refresh-btn');
+      if (sidebarRefreshBtn) {
+        sidebarRefreshBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          event.preventDefault();
+          setSidebarRefreshSpinning(true);
+          executeUsageExtraction(true);
+        });
+      }
+
+      sidebarBarWidget.addEventListener('click', (event) => {
+        if (event.target.closest('#gem-sidebar-refresh-btn')) return;
         openUsageDetailsModal();
       });
     }
@@ -228,7 +329,7 @@
       const labelDisplay = initialPercentage !== null ? `${initialPercentage}` : '--';
       const statusClass = initialPercentage !== null ? getQuotaStatusClass(initialPercentage) : 'status-green';
       const countdownString = formatRemainingTime(currentMetrics);
-      const clockString = currentMetrics?.resetTime ? ` (${currentMetrics.resetTime})` : '';
+      const clockString = currentMetrics?.resetTime ? ` (${formatToEnglishDateString(currentMetrics.resetTime)})` : '';
 
       const circumferenceConstant = 69.11;
       const initialOffset = initialPercentage !== null
@@ -264,7 +365,7 @@
         const innerCountdown = collapsedCircleWidget.querySelector('#gem-tooltip-countdown');
         if (innerCountdown && latestUsageData?.current) {
           const cd = formatRemainingTime(latestUsageData.current);
-          const clk = latestUsageData.current.resetTime ? ` (${latestUsageData.current.resetTime})` : '';
+          const clk = latestUsageData.current.resetTime ? ` (${formatToEnglishDateString(latestUsageData.current.resetTime)})` : '';
           innerCountdown.textContent = `Reset: ${cd}${clk}`;
         }
 
@@ -309,7 +410,7 @@
     const currentPctString = hasCurrent ? `${currentPercentage}%` : '--%';
     const currentStatusClass = getQuotaStatusClass(currentPercentage);
     const countdownFormattedString = formatRemainingTime(currentMetrics);
-    const clockFormattedString = currentMetrics?.resetTime ? currentMetrics.resetTime : '';
+    const clockFormattedString = currentMetrics?.resetTime ? formatToEnglishDateString(currentMetrics.resetTime) : '';
 
     const percentageTextElement = document.getElementById('gem-sidebar-pct-text');
     if (percentageTextElement && percentageTextElement.textContent !== currentPctString) {
@@ -434,12 +535,32 @@
               <option value="10">Every 10 minutes</option>
               <option value="15">Every 15 minutes</option>
               <option value="30">Every 30 minutes</option>
+              <option value="60">Every 60 minutes</option>
+              <option value="0">Disabled (default)</option>
             </select>
+          </div>
+          <div class="gem-modal-row" style="align-items:center;">
+            <span>Auto-refresh prompts:</span>
+            <select id="gem-modal-prompt-select" style="background:#0f172a;color:#f8fafc;border:1px solid rgba(255,255,255,0.15);padding:3px 8px;border-radius:6px;font-size:11px;">
+              <option value="1">Every 1 prompt</option>
+              <option value="2">Every 2 prompts</option>
+              <option value="3">Every 3 prompts (default)</option>
+              <option value="5">Every 5 prompts</option>
+              <option value="10">Every 10 prompts</option>
+              <option value="0">Disabled</option>
+            </select>
+          </div>
+          <div class="gem-modal-row" style="align-items:center; font-size:11px; opacity:0.85;">
+            <span>Prompt progress:</span>
+            <strong id="gem-modal-prompt-progress">0 / 3</strong>
           </div>
         </div>
 
         <div class="gem-modal-footer-actions">
           <button class="gem-modal-btn gem-modal-btn-primary" id="gem-modal-refresh-btn">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-1.19"/>
+            </svg>
             <span>Refresh now</span>
           </button>
         </div>
@@ -453,20 +574,43 @@
     modalBackdropElement.querySelector('#gem-modal-close-btn').addEventListener('click', dismissUsageDetailsModal);
 
     modalBackdropElement.querySelector('#gem-modal-refresh-btn').addEventListener('click', () => {
+      setModalRefreshSpinning(true);
+      setSidebarRefreshSpinning(true);
       executeUsageExtraction(true);
     });
 
     const intervalSelectElement = modalBackdropElement.querySelector('#gem-modal-interval-select');
-    chrome.storage.local.get(['refreshInterval'], (storageResult) => {
-      if (storageResult.refreshInterval) {
+    const promptSelectElement = modalBackdropElement.querySelector('#gem-modal-prompt-select');
+
+    chrome.storage.local.get(['refreshInterval', 'promptRefreshThreshold', 'promptCounter'], (storageResult) => {
+      if (storageResult.refreshInterval !== undefined) {
         intervalSelectElement.value = String(storageResult.refreshInterval);
+      } else {
+        intervalSelectElement.value = '0';
       }
+
+      const threshold = storageResult.promptRefreshThreshold !== undefined
+        ? parseInt(storageResult.promptRefreshThreshold, 10)
+        : 3;
+      promptSelectElement.value = String(threshold);
+      updateModalPromptProgress(storageResult.promptCounter || 0, threshold);
     });
 
     intervalSelectElement.addEventListener('change', (changeEvent) => {
       chrome.runtime.sendMessage({
         action: 'SET_REFRESH_INTERVAL',
         minutes: parseInt(changeEvent.target.value, 10)
+      });
+    });
+
+    promptSelectElement.addEventListener('change', (changeEvent) => {
+      const thresholdVal = parseInt(changeEvent.target.value, 10);
+      chrome.runtime.sendMessage({
+        action: 'SET_PROMPT_THRESHOLD',
+        threshold: thresholdVal
+      });
+      chrome.storage.local.get(['promptCounter'], (res) => {
+        updateModalPromptProgress(res.promptCounter || 0, thresholdVal);
       });
     });
 
@@ -477,9 +621,22 @@
     document.body.appendChild(modalBackdropElement);
   }
 
+  function updateModalPromptProgress(counter, threshold) {
+    const progressEl = document.getElementById('gem-modal-prompt-progress');
+    if (!progressEl) return;
+    if (threshold <= 0) {
+      progressEl.textContent = 'Disabled';
+    } else {
+      progressEl.textContent = `${counter} / ${threshold}`;
+    }
+  }
+
   function openUsageDetailsModal() {
     ensureDetailsModalCreated();
     updateModalDataFields();
+    if (isExtractionInProgress) {
+      setModalRefreshSpinning(true);
+    }
     document.getElementById('gem-usage-modal-backdrop')?.classList.add('active');
   }
 
@@ -516,7 +673,7 @@
 
     const currentResetElement = backdropElement.querySelector('#gem-modal-cur-reset');
     if (currentResetElement) {
-      currentResetElement.textContent = currentMetrics?.resetTime || '--';
+      currentResetElement.textContent = formatToEnglishDateString(currentMetrics?.resetTime) || '--';
     }
 
     const weeklyPercentage = weeklyMetrics ? weeklyMetrics.percentage : 0;
@@ -536,46 +693,85 @@
 
     const weeklyResetElement = backdropElement.querySelector('#gem-modal-week-reset');
     if (weeklyResetElement) {
-      weeklyResetElement.textContent = weeklyMetrics?.resetTime || '--';
+      weeklyResetElement.textContent = formatToEnglishDateString(weeklyMetrics?.resetTime) || '--';
     }
 
     const accountIndicatorElement = backdropElement.querySelector('#gem-modal-acc');
     if (accountIndicatorElement) {
       accountIndicatorElement.textContent = `/u/${activeAccountIndex}`;
     }
+
+    chrome.storage.local.get(['promptCounter', 'promptRefreshThreshold'], (res) => {
+      const threshold = res.promptRefreshThreshold !== undefined ? parseInt(res.promptRefreshThreshold, 10) : 3;
+      updateModalPromptProgress(res.promptCounter || 0, threshold);
+    });
   }
 
-  function registerPromptSubmissionListeners() {
-    document.addEventListener('keydown', (keyboardEvent) => {
-      if (keyboardEvent.key === 'Enter' && !keyboardEvent.shiftKey) {
-        const activeFocusedElement = document.activeElement;
-        if (
-          activeFocusedElement &&
-          (activeFocusedElement.tagName === 'TEXTAREA' ||
-            activeFocusedElement.isContentEditable ||
-            activeFocusedElement.getAttribute('role') === 'textbox')
-        ) {
-          queuePostPromptUsageRefresh();
+  function registerPromptCompletionObserver() {
+    function evaluatePromptButtonState() {
+      const stopIcon = document.querySelector(
+        'mat-icon[data-mat-icon-name="stop"], mat-icon[fonticon="stop"], button[aria-label*="Stop"], button[aria-label*="Arrêter"]'
+      );
+
+      if (stopIcon) {
+        isPromptGenerating = true;
+        return;
+      }
+
+      if (isPromptGenerating) {
+        const readyIcon = document.querySelector(
+          'mat-icon[data-mat-icon-name="mic"], mat-icon[fonticon="mic"], mat-icon[data-mat-icon-name="arrow_upward"], mat-icon[fonticon="arrow_upward"], button[aria-label*="Microphone"], button[aria-label*="Micro"], button[aria-label*="Envoyer"], button[aria-label*="Send"]'
+        );
+
+        if (readyIcon) {
+          isPromptGenerating = false;
+          const now = Date.now();
+          if (now - lastPromptCompletionTimestamp > 2500) {
+            lastPromptCompletionTimestamp = now;
+            onPromptSuccessfullyCompleted();
+          }
         }
       }
-    }, true);
+    }
 
-    document.addEventListener('click', (mouseClickEvent) => {
-      const sendButtonElement = mouseClickEvent.target.closest(
-        '[aria-label*="Envoyer"], [aria-label*="Send"], .send-button'
-      );
-      if (sendButtonElement) {
-        queuePostPromptUsageRefresh();
-      }
-    }, true);
+    const promptObserver = new MutationObserver(() => {
+      evaluatePromptButtonState();
+    });
+
+    promptObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-mat-icon-name', 'fonticon', 'aria-label', 'disabled']
+    });
+
+    setInterval(evaluatePromptButtonState, 1000);
   }
 
-  function queuePostPromptUsageRefresh() {
-    if (postPromptRefreshTimer) clearTimeout(postPromptRefreshTimer);
-    const postPromptDelayMs = 8000 + Math.floor(Math.random() * 5000);
-    postPromptRefreshTimer = setTimeout(() => {
-      executeUsageExtraction(false);
-    }, postPromptDelayMs);
+  function onPromptSuccessfullyCompleted() {
+    chrome.storage.local.get(['promptCounter', 'promptRefreshThreshold'], (storageResult) => {
+      const threshold = storageResult.promptRefreshThreshold !== undefined
+        ? parseInt(storageResult.promptRefreshThreshold, 10)
+        : 3;
+
+      if (threshold <= 0) return;
+
+      const currentCount = (parseInt(storageResult.promptCounter, 10) || 0) + 1;
+
+      if (currentCount >= threshold) {
+        chrome.storage.local.set({ promptCounter: 0 }, () => {
+          updateModalPromptProgress(0, threshold);
+          setTimeout(() => {
+            setSidebarRefreshSpinning(true);
+            executeUsageExtraction(true);
+          }, 1500);
+        });
+      } else {
+        chrome.storage.local.set({ promptCounter: currentCount }, () => {
+          updateModalPromptProgress(currentCount, threshold);
+        });
+      }
+    });
   }
 
   function registerDomAndNavigationObservers() {
@@ -654,11 +850,28 @@
       const fallbackAccount = storageResult.last_active_account || '0';
       const fallbackKey = `usage_${fallbackAccount}`;
 
-      const savedData = storageResult[accountKey] || storageResult[fallbackKey];
+      let savedData = storageResult[accountKey] || storageResult[fallbackKey];
       if (savedData) {
+        const timestamp = savedData.timestamp || storageResult.last_updated || 0;
+        const ageMs = Date.now() - timestamp;
+        if (ageMs > 5 * 3600 * 1000) {
+          savedData = {
+            ...savedData,
+            current: {
+              percentage: 0,
+              resetTime: '',
+              resetsAtEpochMs: null
+            }
+          };
+        }
         latestUsageData = savedData;
         renderUsageInterface();
       }
+
+      const threshold = storageResult.promptRefreshThreshold !== undefined
+        ? parseInt(storageResult.promptRefreshThreshold, 10)
+        : 3;
+      updateModalPromptProgress(storageResult.promptCounter || 0, threshold);
     });
   }
 
@@ -670,12 +883,21 @@
       if (hasUsageChange) {
         loadPersistedUsageData();
       }
+
+      if (changes.promptCounter || changes.promptRefreshThreshold) {
+        chrome.storage.local.get(['promptCounter', 'promptRefreshThreshold'], (res) => {
+          const threshold = res.promptRefreshThreshold !== undefined ? parseInt(res.promptRefreshThreshold, 10) : 3;
+          updateModalPromptProgress(res.promptCounter || 0, threshold);
+        });
+      }
     }
   });
 
   chrome.runtime.onMessage.addListener((incomingMessage) => {
     if (incomingMessage.action === 'SYNC_USAGE_DATA' && incomingMessage.data) {
       latestUsageData = incomingMessage.data;
+      setSidebarRefreshSpinning(false);
+      setModalRefreshSpinning(false);
       renderUsageInterface();
       return;
     }
@@ -692,7 +914,7 @@
     loadPersistedUsageData();
     mountWidgetsToDOM();
     registerDomAndNavigationObservers();
-    registerPromptSubmissionListeners();
+    registerPromptCompletionObserver();
 
     countdownIntervalIdentifier = setInterval(() => {
       if (latestUsageData) {
@@ -701,14 +923,22 @@
       loadPersistedUsageData();
     }, 10000);
 
-    setTimeout(() => {
-      chrome.runtime.sendMessage({ action: 'CHECK_IF_EXTRACTION_NEEDED' }, (response) => {
-        if (chrome.runtime.lastError) return;
-        if (response && response.shouldExtract) {
-          executeUsageExtraction(false);
-        }
-      });
-    }, 3500);
+    chrome.storage.local.get(['last_updated'], (storageResult) => {
+      const lastUpdated = storageResult.last_updated || 0;
+      const ageMs = Date.now() - lastUpdated;
+      if (ageMs > 5 * 3600 * 1000) {
+        executeUsageExtraction(true);
+      } else {
+        setTimeout(() => {
+          chrome.runtime.sendMessage({ action: 'CHECK_IF_EXTRACTION_NEEDED' }, (response) => {
+            if (chrome.runtime.lastError) return;
+            if (response && response.shouldExtract) {
+              executeUsageExtraction(false);
+            }
+          });
+        }, 3500);
+      }
+    });
   }
 
   if (document.readyState === 'loading') {

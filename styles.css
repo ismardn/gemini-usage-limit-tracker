@@ -49,7 +49,7 @@ body.dark-theme, html[data-root-style="dark"] {
 .gem-usage-bar-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
 }
 
@@ -86,6 +86,7 @@ body.dark-theme, html[data-root-style="dark"] {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
+  min-width: 28px;
   letter-spacing: 0.2px;
 }
 
@@ -99,6 +100,51 @@ body.dark-theme, html[data-root-style="dark"] {
 
 .gem-usage-pct-text.status-red {
   color: var(--gem-tracker-red);
+}
+
+.gem-usage-sidebar-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin-left: 2px;
+  margin-right: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--gem-tracker-text-subtle);
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0.75;
+  transition: color 0.15s ease, background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.gem-usage-sidebar-refresh-btn:hover {
+  opacity: 1;
+  color: var(--gem-tracker-text-main);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.gem-usage-refresh-icon {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  display: block;
+}
+
+.gem-usage-sidebar-refresh-btn.spinning .gem-usage-refresh-icon {
+  animation: gem-spin 0.8s linear infinite;
+}
+
+@keyframes gem-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 .gem-usage-info-row {
@@ -376,6 +422,10 @@ chat-app:has(.sidenav-with-history-container.collapsed) #gem-usage-circle-widget
 
 .gem-modal-btn-primary:hover {
   background: #2563eb;
+}
+
+.gem-modal-btn.spinning svg {
+  animation: gem-spin 0.8s linear infinite;
 }
 
 .gem-modal-btn-secondary {
