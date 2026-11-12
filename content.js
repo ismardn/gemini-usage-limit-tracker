@@ -213,6 +213,8 @@
   function executeUsageExtraction(forceImmediate = false) {
     if (isExtractionInProgress && !forceImmediate) return;
     isExtractionInProgress = true;
+    setSidebarRefreshSpinning(true);
+    setModalRefreshSpinning(true);
 
     activeAccountIndex = getActiveAccountIndex();
     const usageEndpointUrl = `https://gemini.google.com/u/${activeAccountIndex}/usage`;
@@ -842,6 +844,50 @@
     setInterval(verifyUrlChange, 1500);
   }
 
+  let lastResetRefreshAttemptTime = 0;
+  let resetRefreshRetryCount = 0;
+  let resetRefreshTimeoutIdentifier = null;
+
+  function checkIfResetRefreshNeeded() {
+    if (!latestUsageData || !latestUsageData.current) return;
+    if (isExtractionInProgress) return;
+
+    const currentMetrics = latestUsageData.current;
+    const hasUsage = typeof currentMetrics.percentage === 'number' && currentMetrics.percentage > 0;
+
+    if (!hasUsage) {
+      resetRefreshRetryCount = 0;
+      return;
+    }
+
+    const countdownText = formatRemainingTime(currentMetrics);
+    if (countdownText !== 'Ready to reset') {
+      resetRefreshRetryCount = 0;
+      return;
+    }
+
+    const now = Date.now();
+    const timeSinceLastAttempt = now - lastResetRefreshAttemptTime;
+
+    if (timeSinceLastAttempt < 15000) return;
+    if (resetRefreshRetryCount >= 3) return;
+
+    lastResetRefreshAttemptTime = now;
+    resetRefreshRetryCount++;
+
+    setSidebarRefreshSpinning(true);
+    setModalRefreshSpinning(true);
+
+    if (resetRefreshTimeoutIdentifier) clearTimeout(resetRefreshTimeoutIdentifier);
+    resetRefreshTimeoutIdentifier = setTimeout(() => {
+      chrome.runtime.sendMessage({ action: 'REQUEST_RESET_REFRESH' }, (response) => {
+        if (chrome.runtime.lastError || !response || response.shouldExtract) {
+          executeUsageExtraction(true);
+        }
+      });
+    }, 1500);
+  }
+
   function loadPersistedUsageData() {
     activeAccountIndex = getActiveAccountIndex();
     chrome.storage.local.get(null, (storageResult) => {
@@ -866,6 +912,7 @@
         }
         latestUsageData = savedData;
         renderUsageInterface();
+        checkIfResetRefreshNeeded();
       }
 
       const threshold = storageResult.promptRefreshThreshold !== undefined
@@ -903,6 +950,8 @@
     }
 
     if (incomingMessage.action === 'TRIGGER_TAB_REFRESH') {
+      setSidebarRefreshSpinning(true);
+      setModalRefreshSpinning(true);
       executeUsageExtraction(true);
       return;
     }
@@ -919,9 +968,13 @@
     countdownIntervalIdentifier = setInterval(() => {
       if (latestUsageData) {
         renderUsageInterface();
+        checkIfResetRefreshNeeded();
       }
+    }, 1000);
+
+    setInterval(() => {
       loadPersistedUsageData();
-    }, 10000);
+    }, 20000);
 
     chrome.storage.local.get(['last_updated'], (storageResult) => {
       const lastUpdated = storageResult.last_updated || 0;

@@ -27,12 +27,14 @@ A lightweight WebExtension (Manifest V3) that tracks and displays your real-time
   - Collapses into a compact circular progress gauge (28px) next to the menu icon.
   - Shows a hover tooltip with your 5-hour usage and reset countdown.
 
-### 2. Detailed Modal
+### 2. Detailed Modal & Automatic Resets
 Clicking the bar or the circular gauge opens a modal with:
 - **5-Hour Window**: Progress bar, percentage used, remaining time, and exact reset time.
 - **Weekly Limit**: Progress bar, percentage used, and weekly reset schedule.
 - **Active Account**: Detected account index (`/u/X/`).
+- **Auto-Refresh on Reset**: Automatically triggers a refresh as soon as the countdown completes ("Ready to reset") so your updated quota is immediately visible.
 - **Refresh Settings**: Configurable update interval (5, 10, 15, or 30 minutes) with natural randomized jitter (±20s to 45s) to avoid predictable bot patterns.
+- **Prompt Trigger**: Configurable automatic refresh after a set number of completed prompts.
 - **Refresh Now**: Manual refresh button.
 
 ### 3. Toolbar Badge

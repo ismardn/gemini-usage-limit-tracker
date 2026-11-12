@@ -156,6 +156,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  let isPopupRefreshing = false;
+  let lastPopupResetRefreshTime = 0;
+
+  function checkPopupResetRefresh(currentMetrics) {
+    if (!currentMetrics || isPopupRefreshing) return;
+    const hasUsage = typeof currentMetrics.percentage === 'number' && currentMetrics.percentage > 0;
+    if (!hasUsage) return;
+
+    if (formatCountdown(currentMetrics) === 'Ready to reset') {
+      const now = Date.now();
+      if (now - lastPopupResetRefreshTime < 15000) return;
+      lastPopupResetRefreshTime = now;
+      isPopupRefreshing = true;
+      refreshButtonElement.classList.add('spinning');
+      chrome.runtime.sendMessage({ action: 'FORCE_REFRESH' }, () => {
+        setTimeout(() => {
+          isPopupRefreshing = false;
+          refreshButtonElement.classList.remove('spinning');
+          loadLatestUsageData();
+        }, 2500);
+      });
+    }
+  }
+
   function loadLatestUsageData() {
     chrome.storage.local.get(null, (storageItems) => {
       const activeAccount = storageItems.last_active_account || '0';
@@ -174,6 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       renderMetrics(storedMetrics, activeAccount);
+      checkPopupResetRefresh(storedMetrics?.current);
     });
   }
 
@@ -188,4 +213,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   loadLatestUsageData();
+
+  setInterval(() => {
+    loadLatestUsageData();
+  }, 1000);
 });

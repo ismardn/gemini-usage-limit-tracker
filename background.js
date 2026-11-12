@@ -29,6 +29,118 @@ function scheduleNextAlarm(intervalMinutes) {
   });
 }
 
+function formatToEnglishDateString(rawString) {
+  if (!rawString) return '';
+  let str = String(rawString).trim();
+  str = str.replace(/\b(?:le|on)\s+/gi, '');
+  const months = [
+    [/janv(?:\.|\b)|janvier/gi, 'Jan'],
+    [/f[ée]vr(?:\.|\b)|f[ée]vrier/gi, 'Feb'],
+    [/mars/gi, 'Mar'],
+    [/avr(?:\.|\b)|avril/gi, 'Apr'],
+    [/mai/gi, 'May'],
+    [/juin/gi, 'Jun'],
+    [/juil(?:\.|\b)|juillet/gi, 'Jul'],
+    [/ao[uû]t/gi, 'Aug'],
+    [/sept(?:\.|\b)|septembre/gi, 'Sep'],
+    [/oct(?:\.|\b)|octobre/gi, 'Oct'],
+    [/nov(?:\.|\b)|novembre/gi, 'Nov'],
+    [/d[ée]c(?:\.|\b)|d[ée]cembre/gi, 'Dec']
+  ];
+  for (const [pattern, enMonth] of months) {
+    str = str.replace(pattern, enMonth);
+  }
+  const days = [
+    [/lundi/gi, 'Monday'],
+    [/mardi/gi, 'Tuesday'],
+    [/mercredi/gi, 'Wednesday'],
+    [/jeudi/gi, 'Thursday'],
+    [/vendredi/gi, 'Friday'],
+    [/samedi/gi, 'Saturday'],
+    [/dimanche/gi, 'Sunday']
+  ];
+  for (const [pattern, enDay] of days) {
+    str = str.replace(pattern, enDay);
+  }
+  str = str.replace(/\s+[àa]\s+/gi, ' at ');
+  str = str.replace(/^[àa]\s+/gi, '');
+  str = str.replace(/(\d{1,2})h(\d{2})/gi, '$1:$2');
+  const dateFirstMatch = str.match(/^(\d{1,2})\s+([A-Za-z]+)\s+at\s+(\d{1,2}:\d{2}.*)$/i);
+  if (dateFirstMatch) {
+    str = `${dateFirstMatch[2]} ${dateFirstMatch[1]} at ${dateFirstMatch[3]}`;
+  }
+  return str.trim();
+}
+
+function calculateResetEpochMs(currentMetrics) {
+  if (!currentMetrics) return null;
+  if (typeof currentMetrics.resetsAtEpochMs === 'number' && !isNaN(currentMetrics.resetsAtEpochMs)) {
+    return currentMetrics.resetsAtEpochMs;
+  }
+  if (!currentMetrics.resetTime) return null;
+
+  const timeString = formatToEnglishDateString(currentMetrics.resetTime);
+  const match24Hour = timeString.match(/^(\d{1,2})[:.](\d{2})$/);
+  const match12Hour = timeString.match(/^(\d{1,2})[:.]?(\d{2})?\s*([AaPp][Mm])$/i);
+
+  let targetHour = null;
+  let targetMinute = 0;
+
+  if (match24Hour) {
+    targetHour = parseInt(match24Hour[1], 10);
+    targetMinute = parseInt(match24Hour[2], 10);
+  } else if (match12Hour) {
+    targetHour = parseInt(match12Hour[1], 10);
+    targetMinute = match12Hour[2] ? parseInt(match12Hour[2], 10) : 0;
+    const isPostMeridiem = match12Hour[3].toLowerCase() === 'pm';
+    if (isPostMeridiem && targetHour < 12) targetHour += 12;
+    if (!isPostMeridiem && targetHour === 12) targetHour = 0;
+  }
+
+  if (targetHour !== null) {
+    const now = new Date();
+    const targetDate = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      targetHour,
+      targetMinute,
+      0,
+      0
+    );
+
+    let diffMs = targetDate.getTime() - now.getTime();
+    if (diffMs <= 0) {
+      const nextDayDiffMs = (targetDate.getTime() + 24 * 3600 * 1000) - now.getTime();
+      if (nextDayDiffMs > 0 && nextDayDiffMs <= 5.5 * 3600 * 1000) {
+        return targetDate.getTime() + 24 * 3600 * 1000;
+      }
+      return targetDate.getTime();
+    }
+
+    if (diffMs <= 5.5 * 3600 * 1000) {
+      return targetDate.getTime();
+    }
+
+    return targetDate.getTime() - 24 * 3600 * 1000;
+  }
+
+  return null;
+}
+
+function scheduleResetAlarm(currentMetrics) {
+  chrome.alarms.clear('check_gemini_reset', () => {
+    if (!currentMetrics) return;
+    const epochMs = calculateResetEpochMs(currentMetrics);
+    const now = Date.now();
+    if (epochMs && epochMs > now) {
+      chrome.alarms.create('check_gemini_reset', {
+        when: epochMs + 2000
+      });
+    }
+  });
+}
+
 function triggerSingleTabRefresh() {
   chrome.tabs.query({ url: 'https://gemini.google.com/*' }, (tabs) => {
     if (!tabs || tabs.length === 0) return;
@@ -73,7 +185,7 @@ function updateActionBadge(percentage) {
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.action.setBadgeText({ text: '' });
-  chrome.storage.local.get(['refreshInterval', 'promptRefreshThreshold', 'promptCounter'], (result) => {
+  chrome.storage.local.get(['refreshInterval', 'promptRefreshThreshold', 'promptCounter', 'last_active_account'], (result) => {
     const minutes = result.refreshInterval !== undefined ? result.refreshInterval : DEFAULT_REFRESH_INTERVAL_MINUTES;
     const threshold = result.promptRefreshThreshold !== undefined ? result.promptRefreshThreshold : DEFAULT_PROMPT_REFRESH_THRESHOLD;
     const updates = {};
@@ -90,14 +202,30 @@ chrome.runtime.onInstalled.addListener(() => {
       chrome.storage.local.set(updates);
     }
     scheduleNextAlarm(minutes);
+
+    const activeAccount = result.last_active_account || '0';
+    chrome.storage.local.get([`usage_${activeAccount}`, 'usage_0'], (usageRes) => {
+      const usage = usageRes[`usage_${activeAccount}`] || usageRes.usage_0;
+      if (usage && usage.current) {
+        scheduleResetAlarm(usage.current);
+      }
+    });
   });
 });
 
 chrome.runtime.onStartup.addListener(() => {
   chrome.action.setBadgeText({ text: '' });
-  chrome.storage.local.get(['refreshInterval', 'last_updated'], (result) => {
+  chrome.storage.local.get(['refreshInterval', 'last_updated', 'last_active_account'], (result) => {
     const minutes = result.refreshInterval !== undefined ? result.refreshInterval : DEFAULT_REFRESH_INTERVAL_MINUTES;
     scheduleNextAlarm(minutes);
+
+    const activeAccount = result.last_active_account || '0';
+    chrome.storage.local.get([`usage_${activeAccount}`, 'usage_0'], (usageRes) => {
+      const usage = usageRes[`usage_${activeAccount}`] || usageRes.usage_0;
+      if (usage && usage.current) {
+        scheduleResetAlarm(usage.current);
+      }
+    });
 
     const now = Date.now();
     const lastUpdated = result.last_updated || 0;
@@ -115,6 +243,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
       const minutes = result.refreshInterval !== undefined ? result.refreshInterval : DEFAULT_REFRESH_INTERVAL_MINUTES;
       scheduleNextAlarm(minutes);
     });
+  }
+
+  if (alarm.name === 'check_gemini_reset') {
+    triggerSingleTabRefresh();
   }
 });
 
@@ -160,8 +292,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.storage.local.set(storagePayload, () => {
       updateActionBadge(null);
       broadcastUsageDataToAllTabs(usageData, accountIndex);
+      scheduleResetAlarm(usageData.current);
       sendResponse({ status: 'success' });
     });
+    return true;
+  }
+
+  if (message.action === 'REQUEST_RESET_REFRESH') {
+    const now = Date.now();
+    const timeSinceLast = now - lastExtractionTimestamp;
+
+    if (isExtractionActive || timeSinceLast < 10000) {
+      sendResponse({ shouldExtract: false });
+      return true;
+    }
+
+    isExtractionActive = true;
+    lastExtractionTimestamp = now;
+
+    setTimeout(() => {
+      isExtractionActive = false;
+    }, 20000);
+
+    sendResponse({ shouldExtract: true });
     return true;
   }
 

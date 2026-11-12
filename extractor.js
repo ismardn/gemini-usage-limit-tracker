@@ -48,6 +48,56 @@
     return str.trim();
   }
 
+  function calculateResetEpochMsFromTimeString(timeString) {
+    if (!timeString) return null;
+    const match24Hour = timeString.match(/^(\d{1,2})[:.](\d{2})$/);
+    const match12Hour = timeString.match(/^(\d{1,2})[:.]?(\d{2})?\s*([AaPp][Mm])$/i);
+
+    let targetHour = null;
+    let targetMinute = 0;
+
+    if (match24Hour) {
+      targetHour = parseInt(match24Hour[1], 10);
+      targetMinute = parseInt(match24Hour[2], 10);
+    } else if (match12Hour) {
+      targetHour = parseInt(match12Hour[1], 10);
+      targetMinute = match12Hour[2] ? parseInt(match12Hour[2], 10) : 0;
+      const isPostMeridiem = match12Hour[3].toLowerCase() === 'pm';
+      if (isPostMeridiem && targetHour < 12) targetHour += 12;
+      if (!isPostMeridiem && targetHour === 12) targetHour = 0;
+    }
+
+    if (targetHour !== null) {
+      const now = new Date();
+      const targetDate = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+        targetHour,
+        targetMinute,
+        0,
+        0
+      );
+
+      let diffMs = targetDate.getTime() - now.getTime();
+      if (diffMs <= 0) {
+        const nextDayDiffMs = (targetDate.getTime() + 24 * 3600 * 1000) - now.getTime();
+        if (nextDayDiffMs > 0 && nextDayDiffMs <= 5.5 * 3600 * 1000) {
+          return targetDate.getTime() + 24 * 3600 * 1000;
+        }
+        return targetDate.getTime();
+      }
+
+      if (diffMs <= 5.5 * 3600 * 1000) {
+        return targetDate.getTime();
+      }
+
+      return targetDate.getTime() - 24 * 3600 * 1000;
+    }
+
+    return null;
+  }
+
   function parseUsageMetricsFromDOM() {
     const currentUsageElement = document.querySelector('[data-testid="current-usage"]');
     const weeklyUsageElement = document.querySelector('[data-testid="weekly-usage"]');
@@ -134,6 +184,10 @@
         if (!isNaN(parsedEpoch)) {
           calculatedResetsAtEpochMs = parsedEpoch;
         }
+      }
+
+      if (!calculatedResetsAtEpochMs && parsedResetTimeString) {
+        calculatedResetsAtEpochMs = calculateResetEpochMsFromTimeString(parsedResetTimeString);
       }
 
       extractionResult.current = {
