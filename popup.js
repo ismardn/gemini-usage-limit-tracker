@@ -126,6 +126,115 @@ document.addEventListener('DOMContentLoaded', () => {
     return '--';
   }
 
+  function calculateElapsedPercentage5h(currentUsageMetrics) {
+    if (!currentUsageMetrics) return null;
+
+    let differenceMs = null;
+    if (currentUsageMetrics.resetsAtEpochMs) {
+      differenceMs = currentUsageMetrics.resetsAtEpochMs - Date.now();
+    } else if (currentUsageMetrics.resetTime) {
+      const timeString = formatToEnglishDateString(currentUsageMetrics.resetTime);
+      const match24Hour = timeString.match(/^(\d{1,2})[:.](\d{2})$/);
+      const match12Hour = timeString.match(/^(\d{1,2})[:.]?(\d{2})?\s*([AaPp][Mm])$/i);
+
+      let targetHour = null;
+      let targetMinute = 0;
+
+      if (match24Hour) {
+        targetHour = parseInt(match24Hour[1], 10);
+        targetMinute = parseInt(match24Hour[2], 10);
+      } else if (match12Hour) {
+        targetHour = parseInt(match12Hour[1], 10);
+        targetMinute = match12Hour[2] ? parseInt(match12Hour[2], 10) : 0;
+        const isPostMeridiem = match12Hour[3].toLowerCase() === 'pm';
+        if (isPostMeridiem && targetHour < 12) targetHour += 12;
+        if (!isPostMeridiem && targetHour === 12) targetHour = 0;
+      }
+
+      if (targetHour !== null) {
+        const currentDate = new Date();
+        const targetDate = new Date(
+          currentDate.getFullYear(),
+          currentDate.getMonth(),
+          currentDate.getDate(),
+          targetHour,
+          targetMinute,
+          0
+        );
+
+        differenceMs = targetDate.getTime() - currentDate.getTime();
+        if (differenceMs <= 0) {
+          const nextDayDiffMs = (targetDate.getTime() + 24 * 3600 * 1000) - currentDate.getTime();
+          if (nextDayDiffMs > 0 && nextDayDiffMs <= 5.5 * 3600 * 1000) {
+            differenceMs = nextDayDiffMs;
+          } else {
+            differenceMs = 0;
+          }
+        }
+      }
+    }
+
+    if (differenceMs === null) return null;
+
+    const WINDOW_5H_MS = 5 * 3600 * 1000;
+    if (differenceMs <= 0) return 100;
+    if (differenceMs >= WINDOW_5H_MS) return 0;
+
+    const elapsedMs = WINDOW_5H_MS - differenceMs;
+    return Math.min(100, Math.max(0, Math.round((elapsedMs / WINDOW_5H_MS) * 100)));
+  }
+
+  function calculateElapsedPercentageWeekly(weeklyMetrics) {
+    if (!weeklyMetrics || !weeklyMetrics.resetTime) return null;
+
+    const timeString = formatToEnglishDateString(weeklyMetrics.resetTime);
+    const now = new Date();
+    const cleaned = timeString.replace(/\bat\b/gi, ' ').replace(/\s+/g, ' ').trim();
+
+    const withYear = `${cleaned} ${now.getFullYear()}`;
+    let parsedEpoch = Date.parse(withYear);
+    let targetTime = null;
+
+    if (!isNaN(parsedEpoch)) {
+      let target = new Date(parsedEpoch);
+      if (target.getTime() < now.getTime() - 24 * 3600 * 1000) {
+        target.setFullYear(now.getFullYear() + 1);
+      }
+      targetTime = target.getTime();
+    } else {
+      const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const dayMatch = cleaned.match(/^(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)\s+(\d{1,2})[:.](\d{2})?(?:\s*([AaPp][Mm]))?/i);
+      if (dayMatch) {
+        const targetDayIndex = days.indexOf(dayMatch[1].toLowerCase());
+        let hour = parseInt(dayMatch[2], 10);
+        const minute = dayMatch[3] ? parseInt(dayMatch[3], 10) : 0;
+        const isPm = dayMatch[4] && dayMatch[4].toLowerCase() === 'pm';
+        if (isPm && hour < 12) hour += 12;
+        if (dayMatch[4] && dayMatch[4].toLowerCase() === 'am' && hour === 12) hour = 0;
+
+        let daysUntil = (targetDayIndex - now.getDay() + 7) % 7;
+        if (daysUntil === 0) {
+          const todayTarget = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0);
+          if (todayTarget.getTime() <= now.getTime()) {
+            daysUntil = 7;
+          }
+        }
+        const target = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysUntil, hour, minute, 0);
+        targetTime = target.getTime();
+      }
+    }
+
+    if (!targetTime) return null;
+
+    const WINDOW_WEEKLY_MS = 7 * 24 * 3600 * 1000;
+    const differenceMs = targetTime - now.getTime();
+    if (differenceMs <= 0) return 100;
+    if (differenceMs >= WINDOW_WEEKLY_MS) return 0;
+
+    const elapsedMs = WINDOW_WEEKLY_MS - differenceMs;
+    return Math.min(100, Math.max(0, Math.round((elapsedMs / WINDOW_WEEKLY_MS) * 100)));
+  }
+
   function renderMetrics(usageMetrics, activeAccountIndex) {
     accountIndicatorElement.textContent = `u/${activeAccountIndex}`;
 
@@ -143,6 +252,21 @@ document.addEventListener('DOMContentLoaded', () => {
       currentProgressFillElement.className = `progress-fill ${statusClass}`;
       currentCountdownElement.textContent = formatCountdown(currentMetrics);
       currentResetClockElement.textContent = formatToEnglishDateString(currentMetrics.resetTime) || '--';
+
+      const curMarker = document.getElementById('popup-cur-marker');
+      if (curMarker) {
+        const elapsed5h = calculateElapsedPercentage5h(currentMetrics);
+        if (elapsed5h !== null) {
+          curMarker.style.left = `${elapsed5h}%`;
+          curMarker.style.display = 'block';
+          const pacingText = (typeof percentage === 'number')
+            ? (percentage > elapsed5h ? ' • High burn rate' : ' • Pacing on track')
+            : '';
+          curMarker.title = `Time elapsed: ${elapsed5h}%${pacingText}`;
+        } else {
+          curMarker.style.display = 'none';
+        }
+      }
     }
 
     if (weeklyMetrics) {
@@ -153,6 +277,21 @@ document.addEventListener('DOMContentLoaded', () => {
       weeklyProgressFillElement.style.width = `${percentage}%`;
       weeklyProgressFillElement.className = `progress-fill ${statusClass}`;
       weeklyResetElement.textContent = formatToEnglishDateString(weeklyMetrics.resetTime) || '--';
+
+      const weekMarker = document.getElementById('popup-week-marker');
+      if (weekMarker) {
+        const elapsedWeek = calculateElapsedPercentageWeekly(weeklyMetrics);
+        if (elapsedWeek !== null) {
+          weekMarker.style.left = `${elapsedWeek}%`;
+          weekMarker.style.display = 'block';
+          const pacingText = (typeof percentage === 'number')
+            ? (percentage > elapsedWeek ? ' • High burn rate' : ' • Pacing on track')
+            : '';
+          weekMarker.title = `Time elapsed: ${elapsedWeek}%${pacingText}`;
+        } else {
+          weekMarker.style.display = 'none';
+        }
+      }
     }
   }
 

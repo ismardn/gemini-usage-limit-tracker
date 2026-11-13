@@ -5,6 +5,7 @@
   --gem-tracker-track: rgba(255, 255, 255, 0.14);
   --gem-tracker-text-main: #f8fafc;
   --gem-tracker-text-subtle: #94a3b8;
+  --gem-tracker-time-marker: #cbd5e1;
   --gem-tracker-modal-bg: #1e232d;
   --gem-tracker-modal-border: rgba(255, 255, 255, 0.12);
 }
@@ -14,6 +15,7 @@
     --gem-tracker-track: rgba(0, 0, 0, 0.1);
     --gem-tracker-text-main: #0f172a;
     --gem-tracker-text-subtle: #64748b;
+    --gem-tracker-time-marker: #64748b;
     --gem-tracker-modal-bg: #ffffff;
     --gem-tracker-modal-border: rgba(0, 0, 0, 0.12);
   }
@@ -23,6 +25,7 @@ body.dark-theme, html[data-root-style="dark"] {
   --gem-tracker-track: rgba(255, 255, 255, 0.14);
   --gem-tracker-text-main: #f8fafc;
   --gem-tracker-text-subtle: #94a3b8;
+  --gem-tracker-time-marker: #cbd5e1;
   --gem-tracker-modal-bg: #1e232d;
   --gem-tracker-modal-border: rgba(255, 255, 255, 0.12);
 }
@@ -58,8 +61,31 @@ body.dark-theme, html[data-root-style="dark"] {
   height: 5px;
   background: var(--gem-tracker-track);
   border-radius: 999px;
-  overflow: hidden;
+  overflow: visible;
   position: relative;
+}
+
+.gem-usage-time-marker {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 10px;
+  background: var(--gem-tracker-time-marker, #cbd5e1);
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  pointer-events: auto;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
+  opacity: 0.9;
+  transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease;
+  display: none;
+  cursor: default;
+}
+
+.gem-usage-time-marker:hover {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1.2);
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
 }
 
 .gem-usage-progress-fill {

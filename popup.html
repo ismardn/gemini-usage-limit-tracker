@@ -114,8 +114,32 @@
       height: 6px;
       background: rgba(255, 255, 255, 0.08);
       border-radius: 999px;
-      overflow: hidden;
+      overflow: visible;
       margin-bottom: 8px;
+      position: relative;
+    }
+
+    .time-marker {
+      position: absolute;
+      top: 50%;
+      width: 2px;
+      height: 11px;
+      background: #cbd5e1;
+      border-radius: 999px;
+      transform: translate(-50%, -50%);
+      z-index: 3;
+      pointer-events: auto;
+      box-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
+      opacity: 0.9;
+      transition: left 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease;
+      display: none;
+      cursor: default;
+    }
+
+    .time-marker:hover {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1.2);
+      box-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
     }
 
     .progress-fill {
@@ -188,6 +212,7 @@
     </div>
     <div class="progress-track">
       <div class="progress-fill status-green" id="popup-cur-fill"></div>
+      <div class="time-marker" id="popup-cur-marker" title="Time elapsed"></div>
     </div>
     <div class="info-row">
       <span>Time remaining:</span>
@@ -206,6 +231,7 @@
     </div>
     <div class="progress-track">
       <div class="progress-fill status-green" id="popup-week-fill"></div>
+      <div class="time-marker" id="popup-week-marker" title="Time elapsed"></div>
     </div>
     <div class="info-row">
       <span>Resets on:</span>
