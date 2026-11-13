@@ -86,8 +86,11 @@ body.dark-theme, html[data-root-style="dark"] {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
-  min-width: 28px;
   letter-spacing: 0.2px;
+}
+
+#gem-sidebar-pct-text {
+  min-width: 28px;
 }
 
 .gem-usage-pct-text.status-green {
@@ -383,6 +386,16 @@ chat-app:has(.sidenav-with-history-container.collapsed) #gem-usage-circle-widget
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.gem-modal-card-title .gem-usage-pct-text,
+#gem-modal-cur-badge,
+#gem-modal-week-badge {
+  min-width: auto;
+  text-align: right;
+  margin-left: auto;
+  margin-right: 0;
+  padding-right: 0;
 }
 
 .gem-modal-row {
